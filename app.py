@@ -30,6 +30,9 @@ from flask import Flask, jsonify, request
 
 import audit
 import config
+import detector
+import scoring
+import stylometry
 
 app = Flask(__name__)
 
@@ -199,16 +202,100 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    # Milestone 3, pass 1: a hardcoded answer, to prove the route itself works
-    # before any signal is wired in.
+    payload = request.get_json(silent=True)
+    text, creator_id, problem = _validate_submission(payload)
+    if problem:
+        return _reject(creator_id, *problem)
+
+    content_id = str(uuid.uuid4())
+
+    try:
+        model_score = detector.model_signal(text)
+    except detector.DetectorUnavailable as exc:
+        audit.log_rejection(creator_id=creator_id, reason="detector_unavailable",
+                            content_id=content_id)
+        return jsonify({"error": "detector_unavailable", "message": str(exc)}), 503
+    except ValueError as exc:
+        # perplexity() refuses text with fewer than three tokens.
+        return _reject(creator_id, "text_too_short", str(exc))
+
+    style_score = stylometry.style_signal(text)
+    combined_score = scoring.combine_signals(model_score, style_score)
+    guess, label = scoring.score_to_label(combined_score)
+
+    audit.log_decision(
+        content_id=content_id,
+        creator_id=creator_id,
+        guess=guess,
+        model_score=model_score,
+        style_score=style_score,
+        combined_score=combined_score,
+        label=label,
+        status="decided",
+    )
+
     return jsonify({
-        "content_id": "hardcoded-0000",
-        "guess": "unsure",
-        "confidence": 0.5,
-        "label": "placeholder label",
-        "model_score": None,
-        "style_score": None,
+        "content_id": content_id,
+        "creator_id": creator_id,
+        "guess": guess,
+        "confidence": combined_score,
+        "label": label,
+        "model_score": model_score,
+        "style_score": style_score,
+        "combined_score": combined_score,
+        "status": "decided",
     })
+
+
+# ── Input checks ─────────────────────────────────────────────────────────────
+# Decided in trace.md before the route existed. Every refusal is a 400 with a
+# plain message, and every refusal is logged: an attack that shows up only as
+# an absence is one you'll never find.
+
+MIN_WORDS = 5
+MAX_TEXT_CHARS = 20_000
+MAX_REASONING_CHARS = 5_000
+
+
+def _creator_of(payload) -> str:
+    if isinstance(payload, dict):
+        creator = payload.get("creator_id")
+        if isinstance(creator, str) and creator.strip():
+            return creator.strip()
+    return "unknown"
+
+
+def _validate_submission(payload):
+    """Returns (text, creator_id, problem) where problem is (code, message) or None."""
+    creator_id = _creator_of(payload)
+
+    if not isinstance(payload, dict):
+        return None, creator_id, ("invalid_json",
+                                  "Send a JSON object with \"text\" and \"creator_id\".")
+    if "text" not in payload or payload["text"] is None:
+        return None, creator_id, ("missing_text", "The request has no \"text\" field.")
+    text = payload["text"]
+    if not isinstance(text, str):
+        return None, creator_id, ("text_not_string", "\"text\" must be a string.")
+    if not text.strip():
+        return None, creator_id, ("empty_text", "\"text\" is empty.")
+    if len(text) > MAX_TEXT_CHARS:
+        return None, creator_id, ("text_too_long",
+                                  f"\"text\" is {len(text):,} characters; the limit is "
+                                  f"{MAX_TEXT_CHARS:,}.")
+    if len(text.split()) < MIN_WORDS:
+        return None, creator_id, ("text_too_short",
+                                  f"Send at least {MIN_WORDS} words; there is nothing "
+                                  f"to judge in fewer.")
+    if creator_id == "unknown":
+        return None, creator_id, ("missing_creator_id",
+                                  "The request needs a non-empty \"creator_id\".")
+    return text.strip(), creator_id, None
+
+
+def _reject(creator_id, code, message, status=400, **extra):
+    audit.log_rejection(creator_id=creator_id, reason=code, **extra)
+    return jsonify({"error": code, "message": message}), status
 
 
 @app.post("/appeal")
@@ -231,14 +318,45 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_json",
+                        "message": "Send a JSON object with \"content_id\" and \"reasoning\"."}), 400
 
-    # TODO: delete this and build the route.
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
+
+    if not isinstance(content_id, str) or not content_id.strip():
+        return jsonify({"error": "missing_content_id",
+                        "message": "\"content_id\" is required."}), 400
+    content_id = content_id.strip()
+
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return jsonify({"error": "missing_reasoning",
+                        "message": "\"reasoning\" is required."}), 400
+    reasoning = reasoning.strip()
+    if len(reasoning) > MAX_REASONING_CHARS:
+        return jsonify({"error": "reasoning_too_long",
+                        "message": f"\"reasoning\" is over {MAX_REASONING_CHARS:,} characters."}), 400
+
+    history = audit.entries_for(content_id)
+    if not history:
+        return jsonify({"error": "unknown_content_id",
+                        "message": f"No submission found with content_id '{content_id}'."}), 404
+
+    original = next((e for e in history if e.get("event") is None), history[0])
+    previous_status = original.get("status", "decided")
+    creator_id = original.get("creator_id", "unknown")
+
+    audit.log_appeal(content_id=content_id, creator_id=creator_id, reasoning=reasoning)
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": "under_review",
+        "previous_status": previous_status,
+        "original_guess": original.get("guess"),
+        "message": "Your appeal was recorded. A person will review this decision.",
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────

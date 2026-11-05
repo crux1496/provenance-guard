@@ -39,7 +39,28 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
+1. **The writer's site sends `POST /submit`** with `{"text": ..., "creator_id": ...}`.
+2. **The route validates the input.** Missing or empty text, text that isn't a
+   string, text under 5 words or over 20,000 characters, or a missing
+   `creator_id` all stop here with a `400` and a logged `rejected` entry —
+   nothing downstream ever sees a bad request.
+3. **The route mints a `content_id`** (a UUID), the handle the writer will
+   need to appeal later.
+4. **Signal one reads the text for meaning** (`detector.model_signal`) — a
+   local gpt2 model scores how predictable the text is.
+5. **Signal two measures the text as text** (`stylometry.style_signal`) —
+   sentence-length spread, vocabulary variety, and punctuation, with no idea
+   what any of it says.
+6. **The two signals combine into one score** (`scoring.combine_signals`) —
+   averaged when they agree, weighted toward whichever one reads more human
+   when they split.
+7. **The score becomes a label** (`scoring.score_to_label`) — one of three
+   full sentences a reader actually sees.
+8. **The decision is logged and returned.** `audit.log_decision` writes all
+   nine fields to `logs/audit.jsonl`; the same numbers go back in the
+   response.
 
+The full trace, written before any of this was code, is in `trace.md`.
 
 ---
 
@@ -53,28 +74,62 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** perplexity under a local gpt2 model — how surprised the
+model is by each next word — squashed onto 0–1 so low surprise scores high.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** a language model
+writes by picking a likely next word, so its own output tends to be the kind
+of text a model finds easy to predict. People wander: odd word choices,
+abrupt turns, the specific instead of the typical.
 
-**What it can't see:**
+**What it can't see:** who wrote it. Predictability is a property of
+vocabulary and sentence shape, not of authorship. Someone writing plainly on
+purpose, a younger writer, or someone sticking to words they're sure of in a
+second language all produce predictable text — and this signal scores all of
+them as machine-like. The reverse holds too: dense, rare-word prose (AI or
+human) reads as human here, because rare words are exactly what gpt2 fails to
+predict. It also only looks at the first 400 tokens.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** the shape of the text, not its meaning — the
+coefficient of variation of sentence length, a length-fair type-token ratio
+(vocabulary variety), and the density of "expressive" punctuation
+(semicolons, colons, dashes, brackets, `!`, `?`, quotation marks).
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** generated prose tends
+toward even, mid-length sentences, a safe vocabulary, and tidy punctuation,
+because that's what "most likely next word" produces on average. Human
+writing is lumpier — a three-word sentence next to a forty-word one, a dash,
+an aside.
 
-**What it can't see:**
+**What it can't see:** anything the text actually says. It cannot read.
+Typos, breaking a sentence in two, or pasting in a quotation all move the
+score without changing a single idea — which is exactly what makes it cheap
+to game on purpose. It also can't tell a deliberately even list or poem from
+a machine.
 
 ### The combining rule
 
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** Scale both signals so 0.5 is the midpoint for each. If they
+**agree** — both on the same side of 0.5, or both close to it — average them
+with equal weight. If they **disagree** by at least 0.15 (one signal reads
+human, the other reads AI), don't average: weight the one reading more human
+at 0.7 against 0.3 for the one reading more AI.
 
-**The numbers:**
+Why: the expensive mistake here is one-sided (`trace.md`'s false-positive
+trace). A style signal that can't read a word, or a model signal that
+mistakes plain writing for AI, shouldn't be able to drag a real writer's score
+up on its own. Splitting a disagreement 50/50 lets either signal's blind spot
+do exactly that. Weighting toward "human" when they split means a false
+accusation needs *both* signals to agree, not just one.
+
+**The numbers:** `WEIGHT_MODEL_SIGNAL = WEIGHT_STYLE_SIGNAL = 0.5` when they
+agree; `0.7` / `0.3` toward the human-leaning signal when they disagree by
+`>= 0.15`.
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -83,7 +138,19 @@
 
 **A case where my two signals split, and what my rule does with it:**
 
+`calibration.py`'s `dense_ai_split` input is AI-generated text written with
+deliberately rare, formal vocabulary ("epistemological frameworks,"
+"ontological presuppositions"). Signal one reads it as `model_score = 0.266`
+— human-leaning, because the unusual words are exactly what gpt2 doesn't see
+coming. Signal two reads the same text as `style_score = 0.688` — AI-leaning,
+because the sentences are even and there's almost no expressive punctuation.
 
+That's a genuine split (gap of 0.42, both past the 0.15 threshold), so my
+rule weights toward the human-leaning signal: `0.7 * 0.266 + 0.3 * 0.688 =
+0.392`, which lands in **unsure** rather than being averaged up into
+**high-confidence AI** at a plain 0.5 midpoint. I'd rather this genuinely
+AI-written text land in "unsure" than risk the same rule, run on a real
+writer whose formal prose confuses signal two, calling them AI.
 
 ---
 
@@ -96,16 +163,23 @@
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | 0.00 – 0.35 | "We think this was probably written by a person." |
+| unsure | 0.35 – 0.65 | "We couldn't tell whether this was written by a person or by AI. That's on us, not on you — it isn't a judgment about your writing, and no action is needed." |
+| high-confidence AI | 0.65 – 1.00 | "We think this was most likely written by AI. This is not certain, and you can appeal if you believe it's wrong." |
 
 **Why I worded the "unsure" one this way:**
 <!-- It's the hardest of the three. It has to admit uncertainty without
      sounding like an accusation, because the person reading it may well have
      written every word themselves. -->
 
-
+I put the blame on the system, not the writer ("that's on us, not on you"),
+because the person reading it may well have written every word themselves —
+and both of my signals have a documented blind spot for exactly the writers
+least able to argue back. "No action is needed" is there so an "unsure"
+label doesn't read as a half-accusation that quietly expects a response. I
+left the word "threshold" and any number out of all three labels; a writer
+shouldn't need to understand perplexity or type-token ratio to know what the
+site is telling them.
 
 ---
 
@@ -124,11 +198,21 @@
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "The implementation of the proposed framework requires careful consideration of several key factors. First, it is important to note that the system must be able to handle a wide variety of inputs. Additionally, the overall performance of the solution depends on a number of important variables.", "creator_id": "cruz"}'
 ```
 
 ```json
-
+{
+  "content_id": "8d3ca2c2-01ea-4ec6-af74-03f1cb948c2b",
+  "creator_id": "cruz",
+  "guess": "ai",
+  "confidence": 0.8075,
+  "label": "We think this was most likely written by AI. This is not certain, and you can appeal if you believe it's wrong.",
+  "model_score": 0.8876,
+  "style_score": 0.7275,
+  "combined_score": 0.8075,
+  "status": "decided"
+}
 ```
 
 **An appeal**
@@ -136,11 +220,17 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
+  -d '{"content_id": "8d3ca2c2-01ea-4ec6-af74-03f1cb948c2b", "reasoning": "I wrote this myself for a class assignment and used plain language on purpose."}'
 ```
 
 ```json
-
+{
+  "content_id": "8d3ca2c2-01ea-4ec6-af74-03f1cb948c2b",
+  "status": "under_review",
+  "previous_status": "decided",
+  "original_guess": "ai",
+  "message": "Your appeal was recorded. A person will review this decision."
+}
 ```
 
 **What the log shows afterwards**
@@ -150,8 +240,34 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 ```
 
 ```json
-
+{
+  "count": 2,
+  "entries": [
+    {
+      "timestamp": "2026-11-05T00:22:59+00:00",
+      "content_id": "8d3ca2c2-01ea-4ec6-af74-03f1cb948c2b",
+      "creator_id": "cruz",
+      "guess": "ai",
+      "model_score": 0.8876,
+      "style_score": 0.7275,
+      "combined_score": 0.8075,
+      "label": "We think this was most likely written by AI. This is not certain, and you can appeal if you believe it's wrong.",
+      "status": "decided"
+    },
+    {
+      "timestamp": "2026-11-05T00:23:11+00:00",
+      "content_id": "8d3ca2c2-01ea-4ec6-af74-03f1cb948c2b",
+      "creator_id": "cruz",
+      "event": "appeal",
+      "status": "under_review",
+      "reasoning": "I wrote this myself for a class assignment and used plain language on purpose."
+    }
+  ]
+}
 ```
+
+The original `decided` entry is untouched; the appeal sits after it, which is
+the whole point of an append-only log.
 
 ---
 
@@ -159,15 +275,27 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* a combining rule for `scoring.py::combine_signals` that
+  actually implements the false-positive decision from my Milestone 1 trace,
+  not just a plain weighted average.
+- *What came back:* a rule that averages the two signals when they agree, but
+  weights toward whichever one reads more human (0.7/0.3) when they disagree
+  by more than 0.15.
+- *What I changed:* I picked the 0.15 disagreement threshold and the 0.7/0.3
+  split myself after seeing how the calibration inputs scored — and I made
+  sure the split case I document (`dense_ai_split`) is one I actually
+  verified moves the number the way the rule claims, not a hypothetical.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* help after `python detector.py` crashed with "the
+  paging file is too small" instead of loading gpt2.
+- *What came back:* a diagnosis that it was a Windows virtual-memory limit
+  (checked with `Get-CimInstance Win32_OperatingSystem`, which showed under
+  1.5 GB of virtual memory free against 64 GB total), not a bug in the
+  starter, with a list of processes to close to free it.
+- *What I changed:* nothing in the code — I closed the processes it pointed
+  at and re-ran the same command, which then worked.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 

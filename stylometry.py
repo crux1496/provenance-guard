@@ -30,6 +30,7 @@ anything together:
     python stylometry.py "some text to look at"
 """
 
+import math
 import re
 import statistics
 
@@ -49,81 +50,123 @@ def words(text: str) -> list[str]:
 
 def sentence_length_spread(text: str) -> float:
     """
-    How much sentence length varies. ← TODO
+    How much sentence length varies: the coefficient of variation (standard
+    deviation of words-per-sentence divided by the mean).
 
     Returns:
-        A float. Decide yourself what scale it's on and which direction means
-        "more human" — then write that down, because your combining rule
-        depends on knowing it.
+        A float >= 0. **Higher means more human-like** (lumpier sentences).
+        Typical prose lands between about 0.1 and 0.8.
 
-    A hint on what you're reaching for: the standard deviation of sentence
-    lengths, probably divided by the mean so a long text and a short one are
-    comparable. `statistics.stdev` is imported for you.
-
-    Watch the edge case: a one-sentence submission has no spread at all, and
-    `stdev` raises on fewer than two values. Decide what that should return
-    before the attack set decides for you.
+    Edge case: with fewer than two sentences there is no spread to measure,
+    so this returns 0.0, and `style_signal` treats that measure as having no
+    opinion (0.5) rather than reading it as "perfectly even, so AI".
     """
-    # TODO: replace this
-    return 0.0
+    lengths = [len(words(s)) for s in sentences(text)]
+    lengths = [n for n in lengths if n > 0]
+    if len(lengths) < 2:
+        return 0.0
+    mean = statistics.mean(lengths)
+    return statistics.stdev(lengths) / mean if mean else 0.0
+
+
+TTR_WINDOW = 50
 
 
 def type_token_ratio(text: str) -> float:
     """
-    Unique words over total words. ← TODO
+    Unique words over total words, made fair across lengths.
+
+    Plain TTR falls as text gets longer, so this is the moving-average TTR:
+    the plain ratio inside every 50-word window, averaged. A 60-word text and
+    a 300-word text are then on the same footing. Texts shorter than one
+    window fall back to the plain ratio.
 
     Returns:
-        A float between 0 and 1. Higher means more varied vocabulary.
-
-    Worth knowing before you rely on it: this measure falls as text gets
-    longer, because common words repeat. Two texts of different lengths aren't
-    directly comparable on it, and if your test inputs vary a lot in length,
-    that alone can look like a signal.
+        A float between 0 and 1. **Higher means more varied vocabulary**,
+        which I read as more human-like.
     """
-    # TODO: replace this
-    return 0.0
+    tokens = words(text)
+    if not tokens:
+        return 0.0
+    if len(tokens) <= TTR_WINDOW:
+        return len(set(tokens)) / len(tokens)
+    ratios = [
+        len(set(tokens[i:i + TTR_WINDOW])) / TTR_WINDOW
+        for i in range(len(tokens) - TTR_WINDOW + 1)
+    ]
+    return statistics.mean(ratios)
+
+
+# Full stops and plain commas are left out on purpose: every writer uses them,
+# so they say little about who is writing. These are the marks that vary.
+EXPRESSIVE_PUNCTUATION = set(";:—–-()!?\"'…")
 
 
 def punctuation_density(text: str) -> float:
     """
-    How much punctuation, relative to length. ← TODO
+    Expressive punctuation per 100 words: semicolons, colons, dashes,
+    brackets, question and exclamation marks, quotation marks, ellipses.
+    Apostrophes inside words (it's, don't) are not counted.
 
     Returns:
-        A float. Whether you count all punctuation or only some kinds — commas,
-        semicolons, dashes — is a real choice. Semicolons and em dashes are
-        more interesting than full stops, because they vary more between
-        writers.
+        A float >= 0. **Higher means more human-like**: generated prose tends
+        to keep to full stops and commas.
     """
-    # TODO: replace this
-    return 0.0
+    tokens = words(text)
+    if not tokens:
+        return 0.0
+    # Drop in-word apostrophes and hyphens so contractions and compounds
+    # don't count as punctuation.
+    stripped = re.sub(r"(?<=\w)['\-](?=\w)", "", text)
+    count = sum(1 for ch in stripped if ch in EXPRESSIVE_PUNCTUATION)
+    return 100.0 * count / len(tokens)
 
 
 # ── Combining them ───────────────────────────────────────────────────────────
 
+# Calibrated against the six inputs in calibration.py. Values above these
+# midpoints score as more human-like on that measure; a logistic squashes
+# each raw measure onto 0-1 the same way detector.py squashes perplexity.
+SPREAD_MIDPOINT = 0.30
+TTR_MIDPOINT = 0.78
+PUNCT_MIDPOINT = 1.0
+
+
+def _human_likeness(value: float, midpoint: float, steepness: float = 3.0) -> float:
+    """0-1, higher = more human-like, saturating around the midpoint."""
+    if midpoint <= 0:
+        return 0.5
+    return 1.0 / (1.0 + math.exp(-steepness * (value / midpoint - 1.0)))
+
+
 def style_signal(text: str) -> float:
     """
-    The style signal as a 0–1 score. **Higher means more likely AI.** ← TODO
+    The style signal as a 0–1 score. **Higher means more likely AI.**
 
-    Combine your three measures into one number. Same direction as
-    `detector.model_signal`, so that `scoring.combine_signals` can treat them
-    the same way — if one of your signals runs backwards, everything above it
-    is wrong in a way that's hard to see.
+    All three measures point the same way once scaled: higher sentence-length
+    spread, higher (length-fair) type-token ratio, and more expressive
+    punctuation all read as more human. So each is first turned into a
+    0-1 "how human-like is this" score (`_human_likeness`, a logistic around a
+    midpoint picked from the calibration inputs), then averaged and flipped
+    with `1 - x` to match `detector.model_signal`'s direction, where higher
+    means more likely AI.
 
-    Two things to decide and write down:
-
-      1. Which direction each measure points. Low spread means more AI-ish, so
-         it needs flipping. Work out which of your three need that.
-      2. How to get each onto a comparable scale. A raw type-token ratio sits
-         between 0 and 1; a raw punctuation count doesn't. Adding them
-         unscaled means whichever has the bigger numbers wins by default.
-
-    Test it on the four calibration inputs from Milestone 4 — clearly AI,
-    clearly human, plain conventional human writing, lightly-edited AI — before
-    you trust it. Plain and ordinary, not formal: formal prose reads as *human*
-    to signal one, and it is plain writing that gets accused.
+    A one-sentence submission has no spread value at all
+    (`sentence_length_spread` returns 0.0 for that edge case) — that is
+    treated as "this measure has no opinion" (0.5 human-likeness) rather than
+    as evidence of AI, so one short submission can't be swung by a measure
+    that couldn't run.
     """
-    # TODO: replace this
-    return 0.5
+    spread = sentence_length_spread(text)
+    ttr = type_token_ratio(text)
+    punct = punctuation_density(text)
+
+    spread_h = 0.5 if len(sentences(text)) < 2 else _human_likeness(spread, SPREAD_MIDPOINT)
+    ttr_h = _human_likeness(ttr, TTR_MIDPOINT)
+    punct_h = _human_likeness(punct, PUNCT_MIDPOINT)
+
+    human_likeness = (spread_h + ttr_h + punct_h) / 3.0
+    return round(1.0 - human_likeness, 4)
 
 
 if __name__ == "__main__":

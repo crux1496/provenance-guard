@@ -42,63 +42,76 @@ Two things worth knowing before you pick numbers:
   a **miss**.
 
 ---
-## 1.
+## 1. Human writing is almost never labelled AI
 
-<!-- Your criterion. It must name a number. -->
+Of 10 pieces of human writing (at least 5 written by me, and at least 3 written
+plainly: short sentences, everyday words), **at most 1** is labelled
+high-confidence AI, and **none of the 3 plain pieces** is, in **every one of
+three trials**.
 
-
-
-**Why this target:**
-
-
-
----
-
-## 2.
-
-<!-- Your criterion. -->
-
-
-
-**Why this target:**
-
-
+**Why this target:** on a writing site a wrong accusation costs the writer far
+more than a missed detection costs the site, and plainly written human text is
+exactly what signal one is most likely to accuse (see `trace.md`). One in ten
+is already a lot of people; I would rather miss AI text than let the plain
+writers carry the error.
 
 ---
 
-## 3.
+## 2. Clearly-AI and clearly-human text score far apart
 
-<!-- Your criterion. -->
+Across 5 clearly AI-generated pieces and 5 clearly human pieces, the mean
+`confidence` of the AI pieces is **at least 0.30 higher** than the mean of the
+human pieces, and **no human piece scores above the lowest-scoring AI piece**,
+in every one of three trials.
 
-
-
-**Why this target:**
-
-
-
----
-
-## 4.
-
-<!-- Your criterion. -->
-
-
-
-**Why this target:**
-
-
+**Why this target:** a gap of 0.30 is roughly one whole label band on my scale.
+If the two easiest groups don't land a band apart, the score is not telling a
+reader anything, and the harder cases (edited AI, plain human) have no room to
+fall into "unsure" between them.
 
 ---
 
-## 5.
+## 3. All three labels are reachable
 
-<!-- Your criterion. -->
+From a fixed set of 9 inputs chosen to span the range (3 I expect to read as
+AI, 3 as human, 3 borderline), **each of the three labels appears at least
+once**, and **at least 2 of the 3 borderline inputs** land in "unsure", in
+every one of three trials.
 
+**Why this target:** a label no score can reach is a gap in the ranges, and a
+service that never says "unsure" is pretending to a certainty it doesn't
+have. Borderline text is the case "unsure" exists for, so most of it should
+end up there.
 
+---
 
-**Why this target:**
+## 4. Every appeal changes status and is recorded
 
+For 5 appeals sent against real `content_id`s from earlier submissions,
+**5 of 5** return `200` with `status: "under_review"`, and for each one
+`GET /log` shows the original `decided` entry still unchanged **followed by**
+an `appeal` entry carrying the writer's reasoning. An appeal against a made-up
+`content_id` returns `404` and adds **no** `under_review` entry.
 
+**Why this target:** the appeal is the only thing between a wrong label and the
+writer. One lost appeal in five is one writer silently ignored, so anything
+below 5 of 5 is a failure. The made-up id matters because an appeal that
+"succeeds" against nothing tells the writer they were heard when they weren't.
+
+---
+
+## 5. Bad input is refused, never crashes, and leaves a trace
+
+For 6 malformed requests to `/submit` (no `text` field, `text` empty, `text`
+only whitespace, `text` not a string, `text` over 20,000 characters, body that
+is JSON but not an object), **6 of 6** return a `4xx` status with a JSON
+`error` field, **0** return a `5xx`, and each one adds a `rejected` entry to
+the audit log. `/ping` still answers afterwards.
+
+**Why this target:** a crash on malformed input is one of the most common real
+failures there is, and an attack that only shows up as an absence is one I'll
+never find. Every bad request should get a clear answer and a log line, with
+no exceptions.
 
 ---
 

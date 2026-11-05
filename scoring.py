@@ -52,11 +52,41 @@ def combine_signals(model_score: float, style_score: float) -> float:
     The weights in config.py are placeholders. Change them, or ignore them and
     write a different rule.
     """
-    # TODO: replace this
-    return (
-        config.WEIGHT_MODEL_SIGNAL * model_score
-        + config.WEIGHT_STYLE_SIGNAL * style_score
-    )
+    # The rule, written down before this was code (see README > Signals and
+    # Scoring):
+    #
+    #   1. When the two signals AGREE (both lean the same way past 0.5, or
+    #      both sit near 0.5), average them. Agreement between two signals
+    #      that measure different things is real evidence.
+    #
+    #   2. When they DISAGREE (one leans AI, the other leans human), trust
+    #      the one leaning human more: weight it 0.7 against the other
+    #      signal's 0.3, rather than averaging 50/50.
+    #
+    #   Why: the expensive mistake is one-sided (trace.md's false positive).
+    #   A style signal that cannot read a word, or a model signal that
+    #   mistakes plain writing for AI, should not be able to outvote a signal
+    #   that is confident the text is human. Splitting the difference equally
+    #   would let either signal's blind spot drag a human writer up on its
+    #   own; weighting toward "human" when they split makes a false
+    #   accusation require both signals to agree, not just one.
+    #
+    # "Disagree" means on opposite sides of 0.5 by at least DISAGREEMENT_GAP;
+    # anything closer than that is read as agreement (both near "unsure").
+    DISAGREEMENT_GAP = 0.15
+
+    on_ai_side = model_score > 0.5 and style_score > 0.5
+    on_human_side = model_score < 0.5 and style_score < 0.5
+    gap = abs(model_score - style_score)
+
+    if (on_ai_side or on_human_side) or gap < DISAGREEMENT_GAP:
+        combined = config.WEIGHT_MODEL_SIGNAL * model_score + config.WEIGHT_STYLE_SIGNAL * style_score
+    else:
+        human_leaning = min(model_score, style_score)
+        ai_leaning = max(model_score, style_score)
+        combined = 0.7 * human_leaning + 0.3 * ai_leaning
+
+    return round(min(max(combined, 0.0), 1.0), 4)
 
 
 def score_to_label(score: float) -> tuple[str, str]:
@@ -85,12 +115,18 @@ def score_to_label(score: float) -> tuple[str, str]:
     think if they got it on their own work. That question is the whole
     milestone.
     """
-    # TODO: replace this — thresholds are in config.py
     if score >= config.AI_THRESHOLD:
-        return "ai", "PLACEHOLDER — write the high-confidence AI label."
+        return "ai", (
+            "We think this was most likely written by AI. This is not "
+            "certain, and you can appeal if you believe it's wrong."
+        )
     if score <= config.HUMAN_THRESHOLD:
-        return "human", "PLACEHOLDER — write the high-confidence human label."
-    return "unsure", "PLACEHOLDER — write the unsure label."
+        return "human", "We think this was probably written by a person."
+    return "unsure", (
+        "We couldn't tell whether this was written by a person or by AI. "
+        "That's on us, not on you — it isn't a judgment about your "
+        "writing, and no action is needed."
+    )
 
 
 def label_ranges() -> list[tuple[str, str]]:

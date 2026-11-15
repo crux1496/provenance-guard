@@ -297,6 +297,37 @@ the whole point of an append-only log.
 - *What I changed:* nothing in the code — I closed the processes it pointed
   at and re-ran the same command, which then worked.
 
+**Moment 3 (unit 8)**
+
+- *What I asked for:* given the attack-run and criteria scores, three
+  possible causes for why six `false_positive` attacks and my own plain
+  writing all landed just past the old AI threshold.
+- *What came back:* three candidate stages — signal one alone, signal two
+  alone, or both signals independently reading "surface-regular" text as
+  AI-like for unrelated reasons that happen to agree.
+- *What I changed:* I checked each candidate against the actual
+  `model_score`/`style_score` pairs for the broken attacks rather than
+  picking the most plausible-sounding one, and found it was genuinely the
+  third: both signals agreed, for different reasons, on the same plain or
+  formal human writing. That's what pointed at moving the threshold instead
+  of reweighting — reweighting an *agreement* doesn't move the average much,
+  since both inputs are already close together.
+
+**Moment 4 (unit 8)**
+
+- *What I asked for:* the opposing case for my own MET verdict on criterion
+  1 after the threshold change — why it might actually still be a miss.
+- *What came back:* the threshold move was pointed out as a third kind of
+  change beyond "signal, weight, or validation," and a question of whether
+  moving it for one criterion while it was still MISSED for criterion 3 (in
+  a worse way) meant I'd really fixed anything, or just relabeled the same
+  scores.
+- *What I changed:* I kept the MET verdict for criterion 1 — the scores
+  genuinely moved out of the band that criterion cares about, which is a
+  real change, not relabeling — but it's why the README's Improvement
+  section reports criterion 3 getting *worse*, instead of only reporting
+  the criterion that got better.
+
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
 ---
@@ -671,12 +702,74 @@ demonstrates what it was built to demonstrate.
 <!-- For each attack still getting through and each criterion still missed:
      what you'd do, and why you stopped. -->
 
+- **Evasion, 9 of 10 (`EV01`–`EV09`).** All nine work by making genuinely
+  AI-written text surface-irregular enough to read as human or unsure on at
+  least one signal, and usually both — typos, broken sentences, pasted
+  quotations, padding, a bolted-on human-sounding opening. The real fix is
+  a third signal that reads something other than surface shape — semantic
+  consistency, or a model-based detector trained to be typo-robust — not
+  another threshold or weight on the two I have. I stopped here because
+  that's a new signal, not "one change," and this unit's rule was one
+  change measured properly; building and calibrating a third signal
+  honestly needs its own milestone, not a rushed add-on to this one.
 
+- **Criterion 2 (score separation), still MISSED.** The mean gap between my
+  "clearly AI" and "clearly human" groups is 0.219, short of my 0.30
+  target, because signal one can't distinguish casual-but-common-word human
+  prose from generic-but-common-word AI prose — both are unusually
+  predictable to gpt2 for reasons that have nothing to do with authorship.
+  Nothing in this unit's one allowed change could fix this: it's a model
+  problem, not a threshold or weight problem. I'd want a second opinion
+  signal that measures something perplexity structurally can't, such as a
+  stylistic-consistency check across paragraphs, before I'd trust a bigger
+  fix here.
+
+- **Criterion 3 (label coverage), still MISSED, and worse after my
+  change.** Raising `AI_THRESHOLD` removed the only two inputs in that
+  scenario that ever reached "ai." I'd write a fourth, more extreme
+  calibration text for that scenario — something unambiguously AI-written
+  and repetitive enough to clear 0.80, the way `EV10` does in the attack
+  set — so the scenario actually exercises the label space my service
+  still has, rather than one I accidentally thresholded out from under it.
+  I didn't do it in this unit because I only noticed the side effect after
+  re-running, and the rule above was one change, not two.
+
+- **Non-Latin script (`MF07`), a blind spot I only found by running the
+  attack set.** Right-to-left script scored `ai` at 0.854 — the second
+  highest confidence in the whole run — almost certainly because gpt2's
+  training data and tokenizer are overwhelmingly English/Latin-script, so
+  any non-Latin text looks maximally "surprising" to it regardless of who
+  wrote it. I'd disable signal one (or heavily discount it) for text that
+  isn't mostly Latin-script, and fall back to signal two alone, or to
+  "unsure," rather than let a predictability measure built around English
+  make a confident claim about a language it was never going to be able to
+  read. I stopped here because this unit's rule allowed one change, and I'd
+  already spent it on the threshold; this is next on my list, not
+  abandoned.
+
+- **Per-`creator_id` rate limiting is gameable, by design, right now.**
+  `creator_id` costs nothing to generate — a script can mint a fresh one
+  per request and my limiter would never see a pattern. The `attacks.csv`
+  family deliberately does this (one `creator_id` per attack) and none of
+  it ever got rate-limited, which is correct behavior for this unit's
+  attack set but a real gap for an actual deployment. Fixing it means
+  tying `creator_id` to something that costs an attacker something — an
+  account, a verified session — which is an authentication feature, not a
+  rate-limiter setting, and well outside this unit's one-change rule.
 
 **The trade I'd make if this ran for real:**
 
 <!-- Two sentences. Fewer wrong accusations means more AI text getting through.
      Say which way you'd go and WHO PAYS FOR IT. -->
+
+I'd keep the AI threshold where I moved it, or push it even higher: on a
+writing site, the person who pays for a false "ai" label is a real writer
+who did nothing wrong and now has to argue their way out of an accusation,
+while the person who pays for a missed detection is nobody in particular —
+at worst, a slightly less trustworthy site. I'd rather this service under-
+accuse constantly and let a determined cheater through than falsely accuse
+even a small, steady fraction of the honest writers who are the only reason
+the site has anything worth protecting.
 
 
 

@@ -582,22 +582,87 @@ writing, since plain writing reads as regular on both axes at once.
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** `config.py::AI_THRESHOLD`, from `0.65` to `0.80`. One
+line, one number. Nothing in `scoring.py`, `stylometry.py`, or `detector.py`
+changed — the combined scores below are bit-for-bit identical to the before
+run; only where the "ai" line sits moved.
 
-**Which diagnosis pointed at it:**
+**Which diagnosis pointed at it:** the `false_positive` family and criteria
+1 and 2 all failed at the same score band: real human writing (formal,
+careful-non-native, templated, plainly-written) landed combined scores of
+0.62–0.76, just past the old 0.65 line. My diagnosis said both signals
+share one blind spot for surface-regular writing and my disagreement rule
+can't help when they agree — so the only lever left that doesn't touch the
+signals themselves is where the AI line sits. Moving it to 0.80 puts it
+above every false-positive score I measured (max 0.7593) while staying
+below my clearest genuinely-AI attack (`EV10` at 0.8196).
 
 ### Attack Run — After
 
 <!-- Same format. `run_attacks.py --label after` -->
 
+Same 56 attacks, `python run_attacks.py --set attack_set --label after`.
+Full detail: `results/attack_run_2026-11-14_2200_after.md`.
 
+| Family | Attacks | Held (before → after) | Broke (before → after) |
+|---|---|---|---|
+| `evasion` | 10 | 2 → **1** | 8 → **9** |
+| `false_positive` | 8 | 2 → **8** | 6 → **0** |
+| `prompt_injection` | 6 | 6 → 6 | 0 → 0 |
+| `malformed` | 20 | 20 → 20 | 0 → 0 |
+| `flood_same_creator` | 12 | 12 → 12 | 0 → 0 |
+| **Total** | **56** | **42 → 47** | **14 → 9** |
 
-**Did it help, and how do I know:**
+Every one of `FP02`–`FP07` flipped from `ai` to `unsure` — the whole
+`false_positive` family now holds, and `FP05` (the worst outcome from the
+before run, 0.759) is no longer a false accusation. The cost landed on
+exactly one attack: `EV04` ("unusual words raise perplexity," combined score
+0.6527) flipped from `ai` to `unsure` — genuinely AI-written text that now
+reads as merely "unsure." `EV01`–`EV03`, `EV05`–`EV09` were already broken
+before the change and are unaffected by it, since their scores were already
+well under even the old 0.65 line.
+
+**Did it help, and how do I know:** yes, on the metric it was aimed at, and
+I know because I re-ran the identical 56 attacks and the identical
+three-trial criteria and compared scores, not impressions. Total attack-set
+breaks dropped from 14 to 9, entirely by eliminating the `false_positive`
+family (6 → 0), which was both my single worst outcome and the most
+frequent failure. Criterion 1 moved from MISSED to **MET** — the plain
+piece that scored `ai` before (0.7218) now scores `unsure`, and 0 of my 10
+own-writing pieces are labeled `ai` under either run.
 
 <!-- Widening the unsure band usually fixes one problem and creates another.
      Reporting that trade honestly is worth full credit. -->
 
+But it cost exactly what widening the unsure band always costs, in two
+places:
 
+1. **Evasion got one attack worse** (`EV04`), for the reason above.
+2. **Criterion 3 (label coverage) got worse, not better.** Before the
+   change, "ai" appeared twice in that scenario's 9 inputs (both of my
+   "clearly AI" calibration texts). After, it appears **zero** times — both
+   of those texts score 0.72 and 0.76, under the new 0.80 line, so my own
+   test for "all three labels reachable" no longer reaches `ai` at all. The
+   label is still reachable in general (`EV10` hits it at 0.82 in the attack
+   set), but my criterion-3 scenario's chosen inputs no longer demonstrate
+   that, and I didn't notice this side effect until I re-ran it — I'd
+   written that scenario to calibrate against the *old* threshold. **Run Log
+   and Verdicts, after:**
+
+| Criterion | Target | Verdict (before) | Verdict (after) |
+|---|---|---|---|
+| 1. Human writing almost never AI | ≤1/10 "ai", 0/3 plain "ai" | MISSED | **MET** |
+| 2. AI/human score far apart | mean gap ≥0.30, no overlap | MISSED | MISSED (scores unchanged — this criterion never depended on the threshold) |
+| 3. All three labels reachable | 3/3 labels, ≥2/3 borderline "unsure" | MISSED (1/3 borderline) | MISSED (worse: 0/3 "ai" now, 1/3 borderline unchanged) |
+| 4. Appeal always changes status | 5/5, unknown id → 404 | MET | MET (unaffected) |
+| 5. Bad input never crashes | 6/6 → 4xx, 0 → 5xx | MET | MET (unaffected) |
+
+Criteria 2, 4, and 5 are unaffected by design — 2 is about raw scores, which
+the threshold never touches; 4 and 5 don't call either signal at all. One
+criterion improved, one got honestly worse, three held steady. That's the
+one-sided trade stated plainly: I bought six fewer false accusations with
+one more missed evasion and a label-coverage test that no longer
+demonstrates what it was built to demonstrate.
 
 ---
 

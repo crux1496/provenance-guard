@@ -1,0 +1,200 @@
+[
+  {
+    "appeals": [
+      {
+        "content_id": "fe214b13-7d08-4760-b005-1a3db99f26a5",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "fe214b13-7d08-4760-b005-1a3db99f26a5",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "298eaafe-64ea-4ab6-b18f-f7bc5ba80cd6",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "298eaafe-64ea-4ab6-b18f-f7bc5ba80cd6",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "5224aef8-c988-4d4c-88c6-e7b8017379e5",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "5224aef8-c988-4d4c-88c6-e7b8017379e5",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "81fde82e-fa79-42d8-aab6-9ed79f6b2a33",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "81fde82e-fa79-42d8-aab6-9ed79f6b2a33",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "b2685358-cbb8-4e66-a32a-9d3ae3ade388",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "b2685358-cbb8-4e66-a32a-9d3ae3ade388",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      }
+    ],
+    "unknown_id": {
+      "status_code": 404,
+      "body": {
+        "error": "unknown_content_id",
+        "message": "No submission found with content_id 'not-a-real-content-id'."
+      }
+    }
+  },
+  {
+    "appeals": [
+      {
+        "content_id": "7f440f27-45d9-4884-9f01-6960fd2274d6",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "7f440f27-45d9-4884-9f01-6960fd2274d6",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "ac48889f-ad69-47cd-aba2-ed1b6d7c5f34",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "ac48889f-ad69-47cd-aba2-ed1b6d7c5f34",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "22722087-ab39-4811-9fc5-375b45b5ed3b",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "22722087-ab39-4811-9fc5-375b45b5ed3b",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "af6f3c4b-9b66-4bf1-850c-0aacdaf509fb",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "af6f3c4b-9b66-4bf1-850c-0aacdaf509fb",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "72627fab-fb4a-40ea-a500-0a19499adbaa",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "72627fab-fb4a-40ea-a500-0a19499adbaa",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      }
+    ],
+    "unknown_id": {
+      "status_code": 404,
+      "body": {
+        "error": "unknown_content_id",
+        "message": "No submission found with content_id 'not-a-real-content-id'."
+      }
+    }
+  },
+  {
+    "appeals": [
+      {
+        "content_id": "aa967b99-6e25-4368-8b12-9e5ebf6fbd4c",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "aa967b99-6e25-4368-8b12-9e5ebf6fbd4c",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "7a5c939a-4d55-440b-9277-931f1b4dd649",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "7a5c939a-4d55-440b-9277-931f1b4dd649",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "719863f4-1e37-4330-ba0a-a67dfc0943a8",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "719863f4-1e37-4330-ba0a-a67dfc0943a8",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "e7dbac19-2d87-4c8a-a057-4085741458de",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "e7dbac19-2d87-4c8a-a057-4085741458de",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      },
+      {
+        "content_id": "a2ecdbdf-7879-4fe6-9133-fa3e880ef572",
+        "appeal_status_code": 200,
+        "appeal_body": {
+          "content_id": "a2ecdbdf-7879-4fe6-9133-fa3e880ef572",
+          "message": "Your appeal was recorded. A person will review this decision.",
+          "original_guess": "human",
+          "previous_status": "decided",
+          "status": "under_review"
+        }
+      }
+    ],
+    "unknown_id": {
+      "status_code": 404,
+      "body": {
+        "error": "unknown_content_id",
+        "message": "No submission found with content_id 'not-a-real-content-id'."
+      }
+    }
+  }
+]
